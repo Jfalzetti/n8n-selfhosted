@@ -1,11 +1,17 @@
 version: "3.7"
 
 services:
+  redis:
+    image: redis:6-alpine
+    restart: always
+
   n8n:
     build: .
     restart: always
     ports:
       - "5678:5678"
+    depends_on:
+      - redis
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=admin
@@ -15,6 +21,30 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - N8N_SECURE_COOKIE=false
+      - N8N_RUNNERS_ENABLED=true
+      - EXECUTIONS_MODE=queue
+      - QUEUE_MODE=redis
+      - N8N_REDIS_HOST=172.29.0.2
+      - N8N_REDIS_PORT=6379
+      - N8N_REDIS_DB=0
+      - N8N_DEFAULT_MODE=main
+      - N8N_ENTRYPOINT=webhook
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+
+  n8n-worker:
+    build: .
+    restart: always
+    depends_on:
+      - redis
+    environment:
+      - EXECUTIONS_MODE=queue
+      - QUEUE_MODE=redis
+      - N8N_REDIS_HOST=172.29.0.2
+      - N8N_REDIS_PORT=6379
+      - N8N_REDIS_DB=0
+      - DB_TYPE=sqlite
+      - N8N_HOST=64.227.107.224
     volumes:
       - ./n8n_data:/home/node/.n8n
 
