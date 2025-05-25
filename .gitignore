@@ -8,4 +8,4 @@ n8n_data/
 *.log
 *.sqlite
 .DS_Store
-
+deploy.log
