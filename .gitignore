@@ -1,0 +1,11 @@
+# Ignore n8n data volume (contains runtime DB, logs, tokens, etc.)
+n8n_data/
+
+# Ignore .env files if you store secrets here
+.env
+
+# Node/Editor system files
+*.log
+*.sqlite
+.DS_Store
+
