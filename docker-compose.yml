@@ -1,19 +1,40 @@
-version: "3.7"
-
+version: "3.8"
+networks:
+  n8n-network:
+volumes:
+  postgres_data:
+  redis_data:
 services:
   postgres:
     image: postgres:13
     restart: always
+    networks:
+      - n8n-network
     environment:
       POSTGRES_USER: n8n
       POSTGRES_PASSWORD: n8npass
       POSTGRES_DB: n8n
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:6-alpine
     restart: always
+    networks:
+      - n8n-network
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   n8n:
     build: .
@@ -21,53 +42,104 @@ services:
     ports:
       - "5678:5678"
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - n8n-network
     environment:
+      # Basic Auth
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=admin
       - N8N_BASIC_AUTH_PASSWORD=securepassword
+      
+      # Host Config
       - N8N_HOST=64.227.107.224
       - WEBHOOK_TUNNEL_URL=http://64.227.107.224/
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - N8N_SECURE_COOKIE=false
+      
+      # Queue & Workers
       - N8N_RUNNERS_ENABLED=true
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
       - EXECUTIONS_MODE=queue
       - QUEUE_MODE=redis
       - N8N_REDIS_HOST=redis
       - N8N_REDIS_PORT=6379
       - N8N_REDIS_DB=0
+      
+      # Database
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgres
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=n8n
       - DB_POSTGRESDB_USER=n8n
       - DB_POSTGRESDB_PASSWORD=n8npass
+      
+      # Performance
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_LOG_LEVEL=info
+      - NODE_ENV=production
+      - N8N_METRICS=true
+      
+      # Security
+      - N8N_USER_FOLDER=/home/node/.n8n
+      - N8N_ENCRYPTION_KEY=your-32-character-encryption-key-here
     volumes:
       - ./n8n_data:/home/node/.n8n
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
   n8n-worker:
     build: .
     restart: always
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - n8n-network
     environment:
+      - N8N_ENTRYPOINT=worker
+      
+      # Queue & Workers
+      - N8N_RUNNERS_ENABLED=true
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
       - EXECUTIONS_MODE=queue
       - QUEUE_MODE=redis
       - N8N_REDIS_HOST=redis
       - N8N_REDIS_PORT=6379
       - N8N_REDIS_DB=0
+      
+      # Database
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgres
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=n8n
       - DB_POSTGRESDB_USER=n8n
       - DB_POSTGRESDB_PASSWORD=n8npass
-      - N8N_HOST=64.227.107.224
+      
+      # Performance
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_LOG_LEVEL=info
+      - NODE_ENV=production
+      
+      # Security
+      - N8N_USER_FOLDER=/home/node/.n8n
+      - N8N_ENCRYPTION_KEY=your-32-character-encryption-key-here
     volumes:
       - ./n8n_data:/home/node/.n8n
-
-volumes:
-  postgres_data:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    scale: 2  # Run 2 worker instances
